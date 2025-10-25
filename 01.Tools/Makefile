@@ -1,38 +1,41 @@
-# Compiler
 CXX = g++
-
-# C++ standard
 CPP_STD = -std=c++17
 
-# Common compiler flags
+# Common flags for all platforms
 COMMON_FLAGS = $(CPP_STD) -Wall -Wextra -Wshadow -Wconversion -Wno-sign-conversion -Wfloat-equal
 
-# --- Dynamic Source File Configuration ---
+# Dynamic source file configuration
 STATE_FILE = .current_solution
-
-# Set a default value for the source file. Default is now solution1.cpp
 SRCS = solution1.cpp
-
-# Use the 'include' directive to override the default SRCS if the state file exists.
 -include $(STATE_FILE)
+SRCS := $(strip $(SRCS))
 
-# Name of this Makefile
+# Makefile and contest setup
 CURRENT_MAKEFILE = $(firstword $(MAKEFILE_LIST))
-
-# --- Platform-specific setup ---
-RUN_PREFIX := ./
-ifeq ($(OS),Windows_NT)
-    TARGET_EXT := .exe
-else
-    TARGET_EXT :=
-endif
-
-# --- Contest Directory Setup ---
 CID ?= default_contest
 CP_TEMPLATE_FILE = template.cpp
 IN_FILE ?= input.txt
 
-# --- Build Targets & Flags (Dynamic based on SRCS) ---
+# Default to Unix-like environment settings
+TARGET_EXT :=
+RUN_PREFIX := ./
+RM := rm -f
+COPY := cp
+MKDIR := mkdir -p
+TOUCH := touch
+
+# Override settings for Windows NT (cmd and PowerShell)
+ifeq ($(OS),Windows_NT)
+    TARGET_EXT := .exe
+    RUN_PREFIX :=
+    RM := del /F /Q
+    COPY := copy
+    MKDIR := mkdir
+    # 'touch' equivalent for cmd (creates an empty file)
+    TOUCH := type NUL >
+endif
+
+# --- Dynamic Build Targets (based on SRCS and platform) ---
 SRC_BASE_NAME = $(basename $(SRCS))
 TARGET_DEBUG = $(SRC_BASE_NAME)_debug$(TARGET_EXT)
 TARGET_RELEASE = $(SRC_BASE_NAME)$(TARGET_EXT)
@@ -42,67 +45,78 @@ RELEASE_FLAGS = $(COMMON_FLAGS) -O2
 # --- Default target ---
 all: release
 
-# ========================================================================
-# --- Solution and Contest Management Targets ---
-# ========================================================================
-
-# --- Target to switch the active solution file ---
+# --- Switch active solution file ---
 switch:
 ifeq ($(to),)
 	@echo "--- Resetting active solution to 'solution1.cpp' ---"
-	@rm -f "$(STATE_FILE)"
+	@$(RM) "$(STATE_FILE)" 2>NUL || @true
 	@echo "Active solution is now: solution1.cpp"
 else
 	$(eval NEW_SRC := solution$(to).cpp)
 	@echo "--- Switching active solution to '$(NEW_SRC)' ---"
-	@echo "SRCS = $(NEW_SRC)" > "$(STATE_FILE)"
+	@echo SRCS = $(NEW_SRC) > "$(STATE_FILE)"
 	@echo "Active solution is now: $(NEW_SRC)"
 endif
 
-# --- Target to check the current active solution file ---
+# --- Check current active solution ---
 current:
 	@echo "Current active solution file is: $(SRCS)"
 
-# --- Diagnostic check target ---
+# --- Diagnostic check ---
 check:
 	@echo "--- Checking Makefile Variables ---"
 	@echo "OS (Operating System) = $(OS)"
 	@echo "SRCS (Source File)    = $(SRCS)"
-	@echo "RUN_PREFIX (Executor) = $(RUN_PREFIX)"
 	@echo "TARGET_EXT (Extension)  = $(TARGET_EXT)"
 	@echo "TARGET_DEBUG (Debug Exe) = $(TARGET_DEBUG)"
 	@echo "---------------------------------"
 
-# --- Target to create contest directory structure ---
+# --- Create contest directory structure (Cross-Platform) ---
 contest:
-	@echo "--- Setting up directory for contest: $(CID) ---"
-	( \
-		mkdir -p "$(CID)" && \
-		cd "$(CID)" && \
-		echo "Creating files in $$(pwd)/..." && \
-		touch input.txt output.txt && \
-		($(if $(CP_TEMPLATE_FILE),\
-			(if [ -f ../$(CP_TEMPLATE_FILE) ]; then \
-				echo "Copying template ../$(CP_TEMPLATE_FILE) to solution1.cpp"; \
-				cp ../$(CP_TEMPLATE_FILE) solution1.cpp; \
-			else \
-				echo "Template ../$(CP_TEMPLATE_FILE) not found. Creating empty solution1.cpp"; \
-				touch solution1.cpp; \
-			fi), \
-			touch solution1.cpp \
+ifeq ($(OS),Windows_NT)
+	@echo "--- Setting up directory for contest: $(CID) (Windows) ---"
+	@if not exist "$(CID)" $(MKDIR) "$(CID)"
+	@cd $(CID) && ( \
+		echo Creating files... && \
+		$(TOUCH) input.txt && $(TOUCH) output.txt && \
+		(if exist "..\$(CP_TEMPLATE_FILE)" ( \
+			echo Copying template ..\$(CP_TEMPLATE_FILE) to solution1.cpp && \
+			$(COPY) "..\$(CP_TEMPLATE_FILE)" solution1.cpp > NUL \
+		) else ( \
+			echo Template not found. Creating empty solution1.cpp && \
+			$(TOUCH) solution1.cpp \
 		)) && \
-		touch solution2.cpp solution3.cpp solution4.cpp solution5.cpp solution6.cpp && \
+		$(TOUCH) solution2.cpp && $(TOUCH) solution3.cpp && $(TOUCH) solution4.cpp && $(TOUCH) solution5.cpp && $(TOUCH) solution6.cpp && \
+		echo Copying Makefile... && \
+		$(COPY) "..\$(CURRENT_MAKEFILE)" Makefile > NUL && \
+		echo Files created. Makefile copied. && \
+		echo Attempting to open VS Code... && \
+		(code . || echo Warning: 'code .' command failed. VS Code might not be in your PATH.) \
+	)
+else
+	@echo "--- Setting up directory for contest: $(CID) (Unix) ---"
+	@$(MKDIR) "$(CID)" && cd "$(CID)" && ( \
+		echo "Creating files in $$(pwd)/..." && \
+		$(TOUCH) input.txt output.txt && \
+		(if [ -f ../$(CP_TEMPLATE_FILE) ]; then \
+			echo "Copying template ../$(CP_TEMPLATE_FILE) to solution1.cpp"; \
+			$(COPY) ../$(CP_TEMPLATE_FILE) solution1.cpp; \
+		else \
+			echo "Template not found. Creating empty solution1.cpp"; \
+			$(TOUCH) solution1.cpp; \
+		fi) && \
+		$(TOUCH) solution2.cpp solution3.cpp solution4.cpp solution5.cpp solution6.cpp && \
 		echo "Copying Makefile to $$(pwd)/..." && \
-		cp ../$(CURRENT_MAKEFILE) Makefile && \
+		$(COPY) ../$(CURRENT_MAKEFILE) Makefile && \
 		echo "Files created. Makefile copied." && \
 		echo "Attempting to open VS Code in $$(pwd)..." && \
-		(code . || echo "Warning: 'code .' command failed. VS Code might not be in PATH or not installed. Please open $$(pwd) manually.") \
+		(code . || echo "Warning: 'code .' command failed. VS Code might not be in PATH.") \
 	)
+endif
 	@echo "--- Contest setup for $(CID) complete. ---"
-	@echo "You can now 'cd $(CID)' to start working on solution1.cpp."
+	@echo "You can now 'cd $(CID)' to start working."
 
-# --- Build, Run, and Test Targets ---
-
+# --- Build Targets ---
 debug: $(TARGET_DEBUG)
 $(TARGET_DEBUG): $(SRCS)
 	@echo "--- Compiling for DEBUG: $(SRCS) -> $@ ---"
@@ -115,19 +129,15 @@ $(TARGET_RELEASE): $(SRCS)
 	$(CXX) $(RELEASE_FLAGS) $(SRCS) -o $@
 	@echo "Build complete: $(RUN_PREFIX)$@"
 
+# --- Clean build artifacts ---
 clean:
 	@echo "Cleaning up..."
-	# This command is now very specific. It cleans up build artifacts for
-	# solutions 1-9 (using solution?) and 10-99 (using solution??),
-	# but will not touch other files like 'solution_extra.cpp'.
-	@rm -f solution?_debug.exe solution??_debug.exe \
-	       solution?_debug     solution??_debug \
-	       solution?.exe       solution??.exe \
-	       solution?           solution?? \
-	       *.o *~ core core.* .current_solution
+	@$(RM) solution?_debug$(TARGET_EXT) solution??_debug$(TARGET_EXT) 2>NUL || @true
+	@$(RM) solution?$(TARGET_EXT) solution??$(TARGET_EXT) 2>NUL || @true
+	@$(RM) *.o *~ core core.* .current_solution 2>NUL || @true
 	@echo "Cleanup complete."
 
-# .PHONY list updated with the 'check' target
+# --- Run and Test Aliases ---
 .PHONY: all debug release clean contest switch current check rd rr td tr
 
 rd: debug
